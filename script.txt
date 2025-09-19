@@ -1,0 +1,39 @@
+-- Script to generate CREATE TYPE statements for all UDTTs
+DECLARE @sql NVARCHAR(MAX) = '';
+
+SELECT @sql = @sql + '
+CREATE TYPE [' + s.name + '].[' + tt.name + '] AS TABLE
+(
+' + STUFF((
+    SELECT ',
+    [' + c.name + '] ' 
+        + t.name 
+        + CASE 
+            WHEN t.name IN ('char','varchar','nchar','nvarchar','binary','varbinary')
+                 THEN '(' + CASE WHEN c.max_length = -1 
+                                 THEN 'MAX' 
+                                 ELSE CAST(
+                                    CASE WHEN t.name IN ('nchar','nvarchar') 
+                                         THEN c.max_length/2 
+                                         ELSE c.max_length END AS VARCHAR(10)) END + ')'
+            WHEN t.name IN ('decimal','numeric')
+                 THEN '(' + CAST(c.precision AS VARCHAR(10)) 
+                           + ',' + CAST(c.scale AS VARCHAR(10)) + ')'
+            ELSE '' END
+        + CASE WHEN c.is_nullable = 1 THEN ' NULL' ELSE ' NOT NULL' END
+    FROM sys.columns c
+    JOIN sys.types t ON c.user_type_id = t.user_type_id
+    WHERE c.object_id = tt.type_table_object_id
+    ORDER BY c.column_id
+    FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') 
++ '
+);
+GO
+
+'
+FROM sys.table_types tt
+JOIN sys.schemas s ON tt.schema_id = s.schema_id
+WHERE tt.is_user_defined = 1
+ORDER BY s.name, tt.name;
+
+PRINT @sql;
